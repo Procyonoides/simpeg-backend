@@ -24,6 +24,7 @@ const positionRoutes = require('./src/routes/positions');
 const salaryComponentRoutes = require('./src/routes/salaryComponents');
 const employeeRoutes = require('./src/routes/employees');
 const importRoutes = require('./src/routes/import');
+const leaveRoutes = require('./src/routes/leave');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/departments', departmentRoutes);
@@ -31,3 +32,4 @@ app.use('/api/positions', positionRoutes);
 app.use('/api/salary-components', salaryComponentRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/import', importRoutes);
+app.use('/api/leave', leaveRoutes);
