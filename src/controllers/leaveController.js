@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { getOrCreateCurrentBalance, countLeaveDays } = require('../services/leaveBalanceService');
 
 const getAll = async (req, res) => {
   try {
@@ -50,9 +51,46 @@ const getById = async (req, res) => {
   }
 };
 
+// Sisa kuota cuti tahunan karyawan (siklus otomatis reset di sini)
+const getBalance = async (req, res) => {
+  try {
+    const emp = await pool.query(
+      `SELECT id FROM employees WHERE id = $1 AND company_id = $2`,
+      [req.params.employeeId, req.user.company_id]
+    );
+    if (emp.rows.length === 0) {
+      return res.status(404).json({ message: 'Karyawan tidak ditemukan' });
+    }
+
+    const balance = await getOrCreateCurrentBalance(req.params.employeeId);
+    res.json({
+      quota: balance.quota,
+      used: balance.used,
+      remaining: balance.quota - balance.used,
+      cycle_start: balance.cycle_start,
+      cycle_end: balance.cycle_end
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
 const create = async (req, res) => {
   const { employee_id, type, start_date, end_date, reason } = req.body;
   try {
+    // Kuota cuma berlaku untuk cuti tahunan ('annual'); sakit/izin bebas kuota
+    if (type === 'annual') {
+      const balance = await getOrCreateCurrentBalance(employee_id);
+      const remaining = balance.quota - balance.used;
+      const requestedDays = countLeaveDays(start_date, end_date);
+
+      if (requestedDays > remaining) {
+        return res.status(400).json({
+          message: `Sisa kuota cuti tahunan tidak cukup. Sisa: ${remaining} hari, diajukan: ${requestedDays} hari.`
+        });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO leave_requests (employee_id, type, start_date, end_date, reason, status)
        VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
@@ -67,14 +105,28 @@ const create = async (req, res) => {
 const approve = async (req, res) => {
   const { status } = req.body; // 'approved' | 'rejected'
   try {
+    const existing = await pool.query(`SELECT * FROM leave_requests WHERE id = $1`, [req.params.id]);
+    if (existing.rows.length === 0)
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
+    const leaveReq = existing.rows[0];
+
     const result = await pool.query(
       `UPDATE leave_requests 
        SET status = $1, approved_by = $2, approved_at = NOW(), updated_at = NOW()
        WHERE id = $3 RETURNING *`,
       [status, req.user.id, req.params.id]
     );
-    if (result.rows.length === 0)
-      return res.status(404).json({ message: 'Data tidak ditemukan' });
+
+    // Potong kuota HANYA saat disetujui, dan hanya sekali (jaga-jaga endpoint dipanggil ulang)
+    if (status === 'approved' && leaveReq.status !== 'approved' && leaveReq.type === 'annual') {
+      const balance = await getOrCreateCurrentBalance(leaveReq.employee_id);
+      const days = countLeaveDays(leaveReq.start_date, leaveReq.end_date);
+      await pool.query(
+        `UPDATE leave_balances SET used = used + $1 WHERE id = $2`,
+        [days, balance.id]
+      );
+    }
+
     res.json({ message: `Pengajuan berhasil ${status === 'approved' ? 'disetujui' : 'ditolak'}`, data: result.rows[0] });
   } catch (err) {
     res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
@@ -95,4 +147,4 @@ const remove = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getById, create, approve, remove };
+module.exports = { getAll, getById, getBalance, create, approve, remove };

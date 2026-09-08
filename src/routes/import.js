@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const auth = require('../middleware/auth');
+const checkRole = require('../middleware/checkRole');
 const { importEmployees } = require('../controllers/importController');
 
 const storage = multer.diskStorage({
@@ -16,6 +17,7 @@ const upload = multer({ storage });
 const fs = require('fs');
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-router.post('/employees', auth, upload.single('file'), importEmployees);
+// Import data karyawan: admin & hr saja
+router.post('/employees', auth, checkRole('admin', 'hr'), upload.single('file'), importEmployees);
 
 module.exports = router;

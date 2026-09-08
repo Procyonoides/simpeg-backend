@@ -25,8 +25,14 @@ const salaryComponentRoutes = require('./src/routes/salaryComponents');
 const employeeRoutes = require('./src/routes/employees');
 const importRoutes = require('./src/routes/import');
 const leaveRoutes = require('./src/routes/leave');
+const userRoutes = require('./src/routes/users');
+const dashboardRoutes = require('./src/routes/dashboard.js');
+const payrollRoutes = require('./src/routes/payroll');
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/payroll', payrollRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/positions', positionRoutes);
 app.use('/api/salary-components', salaryComponentRoutes);
