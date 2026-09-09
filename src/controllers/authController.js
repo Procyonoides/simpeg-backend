@@ -56,7 +56,7 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Password salah' });
 
     const token = jwt.sign(
-      { id: user.id, company_id: user.company_id, role: user.role },
+      { id: user.id, company_id: user.company_id, role: user.role, employee_id: user.employee_id || null },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -68,7 +68,9 @@ const login = async (req, res) => {
         username: user.username,
         role: user.role,
         company_id: user.company_id,
-        company_name: user.company_name
+        company_name: user.company_name,
+        employee_id: user.employee_id || null,
+        must_change_password: user.must_change_password
       }
     });
   } catch (err) {
@@ -93,4 +95,38 @@ const profile = async (req, res) => {
   }
 };
 
-module.exports = { register, login, profile };
+// Ganti password sendiri (dipakai juga untuk alur wajib ganti password login pertama)
+const changePassword = async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) {
+    return res.status(400).json({ message: 'Password lama dan password baru wajib diisi' });
+  }
+  if (new_password.length < 6) {
+    return res.status(400).json({ message: 'Password baru minimal 6 karakter' });
+  }
+
+  try {
+    const result = await pool.query(`SELECT * FROM users WHERE id = $1`, [req.user.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User tidak ditemukan' });
+    }
+    const user = result.rows[0];
+
+    const valid = await bcrypt.compare(current_password, user.password);
+    if (!valid) {
+      return res.status(401).json({ message: 'Password lama salah' });
+    }
+
+    const hashed = await bcrypt.hash(new_password, 10);
+    await pool.query(
+      `UPDATE users SET password = $1, must_change_password = false WHERE id = $2`,
+      [hashed, req.user.id]
+    );
+
+    res.json({ message: 'Password berhasil diganti' });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+module.exports = { register, login, profile, changePassword };

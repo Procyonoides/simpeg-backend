@@ -28,6 +28,8 @@ const leaveRoutes = require('./src/routes/leave');
 const userRoutes = require('./src/routes/users');
 const dashboardRoutes = require('./src/routes/dashboard.js');
 const payrollRoutes = require('./src/routes/payroll');
+const portalRoutes = require('./src/routes/portal');
+const profileRequestRoutes = require('./src/routes/profileRequests');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -39,3 +41,5 @@ app.use('/api/salary-components', salaryComponentRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/leave', leaveRoutes);
+app.use('/api/portal', portalRoutes);
+app.use('/api/profile-requests', profileRequestRoutes);
