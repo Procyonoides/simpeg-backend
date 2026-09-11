@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const fs = require('fs');
+const { getOrCreateCurrentBalance, countLeaveDays } = require('../services/leaveBalanceService');
 
 // Field yang boleh diedit LANGSUNG oleh karyawan sendiri (data kontak, bukan data legal)
 const DIRECT_EDIT_FIELDS = ['phone', 'address', 'bank_account'];
@@ -124,4 +125,116 @@ const getMyChangeRequests = async (req, res) => {
   }
 };
 
-module.exports = { getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests };
+// Sisa kuota cuti tahunan milik sendiri
+const getMyLeaveBalance = async (req, res) => {
+  try {
+    const balance = await getOrCreateCurrentBalance(req.user.employee_id);
+    res.json({
+      quota: balance.quota,
+      used: balance.used,
+      remaining: balance.quota - balance.used,
+      cycle_start: balance.cycle_start,
+      cycle_end: balance.cycle_end
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+// Riwayat pengajuan cuti/izin milik sendiri
+const getMyLeaveRequests = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM leave_requests WHERE employee_id = $1 ORDER BY created_at DESC`,
+      [req.user.employee_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+// Ajukan cuti/izin baru — employee_id SELALU dipaksa dari token, bukan dari body
+const createMyLeaveRequest = async (req, res) => {
+  const { type, start_date, end_date, reason } = req.body;
+  if (!type || !start_date || !end_date || !reason) {
+    return res.status(400).json({ message: 'Semua field wajib diisi' });
+  }
+
+  try {
+    if (type === 'annual') {
+      const balance = await getOrCreateCurrentBalance(req.user.employee_id);
+      const remaining = balance.quota - balance.used;
+      const requestedDays = countLeaveDays(start_date, end_date);
+
+      if (requestedDays > remaining) {
+        return res.status(400).json({
+          message: `Sisa kuota cuti tahunan tidak cukup. Sisa: ${remaining} hari, diajukan: ${requestedDays} hari.`
+        });
+      }
+    }
+
+    const result = await pool.query(
+      `INSERT INTO leave_requests (employee_id, type, start_date, end_date, reason, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
+      [req.user.employee_id, type, start_date, end_date, reason]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+// Riwayat slip gaji sendiri (cuma periode yang sudah final yang ditampilkan)
+const getPayslips = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT ps.id, ps.net_salary, ps.gross_salary, pp.year, pp.month
+       FROM payslips ps
+       JOIN payroll_periods pp ON ps.payroll_period_id = pp.id
+       WHERE ps.employee_id = $1 AND pp.status = 'finalized'
+       ORDER BY pp.year DESC, pp.month DESC`,
+      [req.user.employee_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+// Detail 1 slip gaji sendiri, lengkap rincian BPJS & PPh21
+const getPayslipDetail = async (req, res) => {
+  try {
+    const item = await pool.query(
+      `SELECT ps.*, pp.year, pp.month, pp.status as period_status,
+        e.full_name as employee_name, e.employee_code,
+        pos.name as position_name, d.name as department_name
+       FROM payslips ps
+       JOIN payroll_periods pp ON ps.payroll_period_id = pp.id
+       JOIN employees e ON ps.employee_id = e.id
+       LEFT JOIN employee_positions ep ON ep.employee_id = e.id AND ep.is_current = true
+       LEFT JOIN positions pos ON ep.position_id = pos.id
+       LEFT JOIN departments d ON pos.department_id = d.id
+       WHERE ps.id = $1 AND ps.employee_id = $2`,
+      [req.params.id, req.user.employee_id]
+    );
+    if (item.rows.length === 0 || item.rows[0].period_status !== 'finalized') {
+      return res.status(404).json({ message: 'Slip tidak ditemukan' });
+    }
+
+    const components = await pool.query(
+      `SELECT component_name, type, amount FROM payslip_details WHERE payslip_id = $1`,
+      [req.params.id]
+    );
+
+    res.json({ ...item.rows[0], components: components.rows });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+module.exports = {
+  getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests,
+  getPayslips, getPayslipDetail,
+  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest
+};

@@ -6,7 +6,9 @@ const fs = require('fs');
 const auth = require('../middleware/auth');
 const checkRole = require('../middleware/checkRole');
 const {
-  getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests
+  getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests,
+  getPayslips, getPayslipDetail,
+  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest
 } = require('../controllers/portalController');
 
 if (!fs.existsSync('uploads/photos')) fs.mkdirSync('uploads/photos', { recursive: true });
@@ -34,5 +36,10 @@ router.patch('/profile', auth, checkRole('employee'), updateProfile);
 router.post('/photo', auth, checkRole('employee'), upload.single('photo'), uploadPhoto);
 router.post('/change-requests', auth, checkRole('employee'), requestChange);
 router.get('/change-requests', auth, checkRole('employee'), getMyChangeRequests);
+router.get('/payslips', auth, checkRole('employee'), getPayslips);
+router.get('/payslips/:id', auth, checkRole('employee'), getPayslipDetail);
+router.get('/leave', auth, checkRole('employee'), getMyLeaveRequests);
+router.get('/leave-balance', auth, checkRole('employee'), getMyLeaveBalance);
+router.post('/leave', auth, checkRole('employee'), createMyLeaveRequest);
 
 module.exports = router;
