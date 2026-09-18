@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { getTodayPresentCount } = require('./attendanceController');
 
 const getStats = async (req, res) => {
   try {
@@ -51,14 +52,23 @@ const getStats = async (req, res) => {
       [companyId]
     );
 
+    // Absensi hari ini — dari SQL Server. Kalau koneksi SQL Server lagi
+    // bermasalah, jangan sampai bikin seluruh dashboard error, cukup
+    // kirim null dan biarkan frontend tampilkan "-".
+    let presentToday = null;
+    try {
+      presentToday = await getTodayPresentCount(companyId);
+    } catch (attendanceErr) {
+      console.error('Gagal ambil data absensi hari ini:', attendanceErr.message);
+    }
+
     res.json({
       total_employees: parseInt(totalEmployees.rows[0].count),
       new_this_month: parseInt(newThisMonth.rows[0].count),
       pending_leave: parseInt(pendingLeave.rows[0].count),
+      present_today: presentToday,
       department_breakdown: byDepartment.rows,
       recent_leave: recentLeave.rows,
-      // Belum ada modul absensi & payroll, jadi field ini sengaja tidak dikirim
-      // sampai kedua modul itu dibuat.
     });
   } catch (err) {
     res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
