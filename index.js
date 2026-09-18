@@ -30,6 +30,7 @@ const dashboardRoutes = require('./src/routes/dashboard.js');
 const payrollRoutes = require('./src/routes/payroll');
 const portalRoutes = require('./src/routes/portal');
 const profileRequestRoutes = require('./src/routes/profileRequests');
+const attendanceRoutes = require('./src/routes/attendance');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -43,3 +44,4 @@ app.use('/api/import', importRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/portal', portalRoutes);
 app.use('/api/profile-requests', profileRequestRoutes);
+app.use('/api/attendance', attendanceRoutes);

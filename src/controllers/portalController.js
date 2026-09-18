@@ -233,8 +233,82 @@ const getPayslipDetail = async (req, res) => {
   }
 };
 
+// Ringkasan buat halaman Beranda portal: sisa cuti + pengajuan cuti terbaru
+const getHomeSummary = async (req, res) => {
+  try {
+    const balance = await getOrCreateCurrentBalance(req.user.employee_id);
+    const recentLeave = await pool.query(
+      `SELECT id, type, start_date, end_date, status, created_at
+       FROM leave_requests WHERE employee_id = $1
+       ORDER BY created_at DESC LIMIT 5`,
+      [req.user.employee_id]
+    );
+    res.json({
+      leave_balance: {
+        quota: balance.quota,
+        used: balance.used,
+        remaining: balance.quota - balance.used,
+        cycle_start: balance.cycle_start,
+        cycle_end: balance.cycle_end
+      },
+      recent_leave: recentLeave.rows
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
+// Direktori karyawan — cari kolega berdasarkan nama/jabatan/departemen
+const getDirectory = async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
+    const offset = (page - 1) * limit;
+
+    const params = [req.user.company_id];
+    let searchClause = '';
+    if (search) {
+      params.push(`%${search}%`);
+      searchClause = `AND (e.full_name ILIKE $${params.length} OR pos.name ILIKE $${params.length} OR d.name ILIKE $${params.length})`;
+    }
+
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) FROM employees e
+       LEFT JOIN employee_positions ep ON ep.employee_id = e.id AND ep.is_current = true
+       LEFT JOIN positions pos ON ep.position_id = pos.id
+       LEFT JOIN departments d ON pos.department_id = d.id
+       WHERE e.company_id = $1 AND e.status = 'active' ${searchClause}`,
+      params
+    );
+    const total = parseInt(totalResult.rows[0].count);
+
+    params.push(limit, offset);
+    const result = await pool.query(
+      `SELECT e.id, e.full_name, e.employee_code, e.photo_url,
+        pos.name as position_name, d.name as department_name
+       FROM employees e
+       LEFT JOIN employee_positions ep ON ep.employee_id = e.id AND ep.is_current = true
+       LEFT JOIN positions pos ON ep.position_id = pos.id
+       LEFT JOIN departments d ON pos.department_id = d.id
+       WHERE e.company_id = $1 AND e.status = 'active' ${searchClause}
+       ORDER BY e.full_name
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+
+    res.json({
+      employees: result.rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  }
+};
+
 module.exports = {
   getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests,
   getPayslips, getPayslipDetail,
-  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest
+  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest,
+  getHomeSummary, getDirectory
 };

@@ -5,10 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const auth = require('../middleware/auth');
 const checkRole = require('../middleware/checkRole');
+const { getMyAttendance } = require('../controllers/attendanceController');
 const {
   getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests,
   getPayslips, getPayslipDetail,
-  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest
+  getMyLeaveRequests, getMyLeaveBalance, createMyLeaveRequest,
+  getHomeSummary, getDirectory
 } = require('../controllers/portalController');
 
 if (!fs.existsSync('uploads/photos')) fs.mkdirSync('uploads/photos', { recursive: true });
@@ -41,5 +43,8 @@ router.get('/payslips/:id', auth, checkRole('employee'), getPayslipDetail);
 router.get('/leave', auth, checkRole('employee'), getMyLeaveRequests);
 router.get('/leave-balance', auth, checkRole('employee'), getMyLeaveBalance);
 router.post('/leave', auth, checkRole('employee'), createMyLeaveRequest);
+router.get('/home-summary', auth, checkRole('employee'), getHomeSummary);
+router.get('/directory', auth, checkRole('employee'), getDirectory);
+router.get('/attendance', auth, checkRole('employee'), getMyAttendance);
 
 module.exports = router;

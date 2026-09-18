@@ -249,20 +249,44 @@ const remove = async (req, res) => {
   }
 };
 
-// Toggle status aktif/nonaktif
+// Toggle status aktif/nonaktif — sekalian matikan/aktifkan akun login portalnya
 const toggleStatus = async (req, res) => {
   const { status } = req.body;
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `UPDATE employees SET status = $1, updated_at = NOW()
        WHERE id = $2 AND company_id = $3 RETURNING *`,
       [status, req.params.id, req.user.company_id]
     );
-    if (result.rows.length === 0)
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Karyawan tidak ditemukan' });
+    }
+
+    if (status === 'active') {
+      // Aktif lagi (misal rehire) — nyalakan akun, wajib ganti password lagi demi keamanan
+      await client.query(
+        `UPDATE users SET is_active = true, must_change_password = true WHERE employee_id = $1`,
+        [req.params.id]
+      );
+    } else {
+      // Nonaktif/resign/terminated — matikan akun login portalnya
+      await client.query(
+        `UPDATE users SET is_active = false WHERE employee_id = $1`,
+        [req.params.id]
+      );
+    }
+
+    await client.query('COMMIT');
     res.json({ message: `Status berhasil diubah ke ${status}`, data: result.rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ message: 'Terjadi kesalahan', error: err.message });
+  } finally {
+    client.release();
   }
 };
 
