@@ -95,4 +95,4 @@ const getTodayPresentCount = async (companyId) => {
   return parseInt(countResult.rows[0].count);
 };
 
-module.exports = { getEmployeeAttendance, getMyAttendance, getTodayPresentCount };
+module.exports = { getEmployeeAttendance, getMyAttendance, getTodayPresentCount, fetchAttendanceByCode };

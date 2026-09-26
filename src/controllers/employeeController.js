@@ -305,4 +305,56 @@ const destroy = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, changePosition, remove, toggleStatus, destroy };
+const XLSX = require('xlsx');
+
+// Export semua karyawan (sesuai filter search yang aktif) ke Excel
+const exportEmployees = async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const searchQuery = search ? `AND (
+      e.full_name ILIKE $2 OR 
+      e.employee_code ILIKE $2 OR
+      d.name ILIKE $2
+    )` : '';
+    const params = search ? [req.user.company_id, `%${search}%`] : [req.user.company_id];
+
+    const result = await pool.query(
+      `SELECT e.employee_code, e.full_name, e.gender, e.phone, e.status, e.join_date,
+        p.name as position_name, d.name as department_name
+       FROM employees e
+       LEFT JOIN employee_positions ep ON ep.employee_id = e.id AND ep.is_current = true
+       LEFT JOIN positions p ON ep.position_id = p.id
+       LEFT JOIN departments d ON p.department_id = d.id
+       WHERE e.company_id = $1 ${searchQuery}
+       ORDER BY e.full_name`,
+      params
+    );
+
+    const rows = result.rows.map(r => ({
+      'Kode Karyawan': r.employee_code || '-',
+      'Nama Lengkap': r.full_name,
+      'Jenis Kelamin': r.gender === 'M' ? 'Laki-laki' : r.gender === 'F' ? 'Perempuan' : '-',
+      'Departemen': r.department_name || '-',
+      'Jabatan': r.position_name || '-',
+      'No. HP': r.phone || '-',
+      'Status': r.status === 'active' ? 'Aktif' : r.status,
+      'Tanggal Masuk': r.join_date ? new Date(r.join_date).toLocaleDateString('id-ID') : '-'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 10 }, { wch: 14 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Karyawan');
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="daftar-karyawan.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ message: 'Gagal export data', error: err.message });
+  }
+};
+
+module.exports = { getAll, getById, create, update, changePosition, remove, toggleStatus, destroy, exportEmployees };

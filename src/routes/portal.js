@@ -6,6 +6,7 @@ const fs = require('fs');
 const auth = require('../middleware/auth');
 const checkRole = require('../middleware/checkRole');
 const { getMyAttendance } = require('../controllers/attendanceController');
+const { createOvertimeRequest, getMyOvertimeRequests } = require('../controllers/overtimeController');
 const {
   getProfile, updateProfile, uploadPhoto, requestChange, getMyChangeRequests,
   getPayslips, getPayslipDetail,
@@ -46,5 +47,7 @@ router.post('/leave', auth, checkRole('employee'), createMyLeaveRequest);
 router.get('/home-summary', auth, checkRole('employee'), getHomeSummary);
 router.get('/directory', auth, checkRole('employee'), getDirectory);
 router.get('/attendance', auth, checkRole('employee'), getMyAttendance);
+router.post('/overtime', auth, checkRole('employee'), createOvertimeRequest);
+router.get('/overtime', auth, checkRole('employee'), getMyOvertimeRequests);
 
 module.exports = router;
