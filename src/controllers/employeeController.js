@@ -89,29 +89,34 @@ const create = async (req, res) => {
       nik, no_kk, address, phone, email, join_date,
       education, religion, tax_status, npwp,
       contract_type, bank_account, ibu_kandung,
+      schedule_type, fixed_start_time, fixed_end_time,
+      fixed_saturday_start, fixed_saturday_end,
       position_id  // jabatan awal
     } = req.body;
 
-    // Insert karyawan
     const empResult = await client.query(
       `INSERT INTO employees (
         company_id, employee_code, full_name, gender, birth_date, birth_place,
         nik, no_kk, address, phone, email, join_date,
         education, religion, tax_status, npwp,
-        contract_type, bank_account, ibu_kandung, status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'active')
+        contract_type, bank_account, ibu_kandung,
+        schedule_type, fixed_start_time, fixed_end_time,
+        fixed_saturday_start, fixed_saturday_end, status
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'active')
       RETURNING *`,
       [
         req.user.company_id, employee_code, full_name, gender, birth_date, birth_place,
         nik, no_kk, address, phone, email, join_date,
         education, religion, tax_status, npwp,
-        contract_type, bank_account, ibu_kandung
+        contract_type, bank_account, ibu_kandung,
+        schedule_type || 'shift',
+        fixed_start_time || null, fixed_end_time || null,
+        fixed_saturday_start || null, fixed_saturday_end || null
       ]
     );
 
     const employee = empResult.rows[0];
 
-    // Insert jabatan awal kalau ada
     if (position_id) {
       await client.query(
         `INSERT INTO employee_positions (employee_id, position_id, start_date, is_current)
@@ -140,24 +145,31 @@ const update = async (req, res) => {
       nik, no_kk, address, phone, email,
       education, religion, tax_status, npwp,
       contract_type, bank_account, ibu_kandung, status,
+      schedule_type, fixed_start_time, fixed_end_time,
+      fixed_saturday_start, fixed_saturday_end,
       position_id, department_id
     } = req.body;
 
-    // Update data karyawan
     const result = await client.query(
       `UPDATE employees SET
         full_name=$1, gender=$2, birth_date=$3, birth_place=$4,
         nik=$5, no_kk=$6, address=$7, phone=$8, email=$9,
         education=$10, religion=$11, tax_status=$12, npwp=$13,
         contract_type=$14, bank_account=$15, ibu_kandung=$16,
-        status=$17, updated_at=NOW()
-       WHERE id=$18 AND company_id=$19 RETURNING *`,
+        status=$17,
+        schedule_type=$18, fixed_start_time=$19, fixed_end_time=$20,
+        fixed_saturday_start=$21, fixed_saturday_end=$22,
+        updated_at=NOW()
+       WHERE id=$23 AND company_id=$24 RETURNING *`,
       [
         full_name, gender, birth_date, birth_place,
         nik, no_kk, address, phone, email,
         education, religion, tax_status, npwp,
         contract_type, bank_account, ibu_kandung,
         status || 'active',
+        schedule_type || 'shift',
+        fixed_start_time || null, fixed_end_time || null,
+        fixed_saturday_start || null, fixed_saturday_end || null,
         req.params.id, req.user.company_id
       ]
     );

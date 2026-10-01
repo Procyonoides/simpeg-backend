@@ -1,6 +1,6 @@
 const pool = require('../config/db');
-const { calculateOvertimePay } = require('../services/overtimeService');
-const { fetchAttendanceByCode } = require('./attendanceController');
+const { fetchScansInWindow } = require('./attendanceController');
+const { calculateOvertimePay, getDayType, calcNetOvertimeHours } = require('../services/overtimeService');
 
 // Hitung planned_hours dari jam mulai/selesai (format "HH:mm")
 function calcHours(start, end) {
@@ -112,7 +112,8 @@ const rejectOvertimeRequest = async (req, res) => {
 const getAttendanceSuggestion = async (req, res) => {
   try {
     const reqResult = await pool.query(
-      `SELECT ovt.date, e.employee_code, e.company_id
+      `SELECT ovt.date::text AS date_str, ovt.planned_start::text AS planned_start,
+              ovt.planned_end::text AS planned_end, e.employee_code, e.company_id
        FROM overtime_requests ovt
        JOIN employees e ON ovt.employee_id = e.id
        WHERE ovt.id = $1`,
@@ -121,19 +122,30 @@ const getAttendanceSuggestion = async (req, res) => {
     if (reqResult.rows.length === 0 || reqResult.rows[0].company_id !== req.user.company_id) {
       return res.status(404).json({ message: 'Pengajuan tidak ditemukan' });
     }
-    const { date, employee_code } = reqResult.rows[0];
+    const { date_str, planned_start, planned_end, employee_code } = reqResult.rows[0];
     if (!employee_code) {
       return res.json({ check_in: null, check_out: null, message: 'Karyawan belum punya NIK, gak bisa ditarik dari absensi' });
     }
 
-    const d = new Date(date);
-    const records = await fetchAttendanceByCode(employee_code, d.getFullYear(), d.getMonth() + 1);
-    const dateStr = d.toISOString().slice(0, 10);
-    const match = records.find(r => new Date(r.attendance_date).toISOString().slice(0, 10) === dateStr);
+    // Jendela pencarian scan: jam rencana lembur, longgar 3 jam di kiri-kanan
+    const [y, m, d] = date_str.split('-').map(Number);
+    const [sh, sm] = planned_start.split(':').map(Number);
+    const [eh, em] = planned_end.split(':').map(Number);
+    const HOUR = 3600 * 1000;
+    const startMs = Date.UTC(y, m - 1, d, sh, sm);
+    let endMs = Date.UTC(y, m - 1, d, eh, em);
+    if (endMs <= startMs) endMs += 24 * HOUR; // lewat tengah malam (mis. 22:30 -> 06:30)
+
+    const scans = await fetchScansInWindow(
+      employee_code,
+      new Date(startMs - 3 * HOUR),
+      new Date(endMs + 3 * HOUR)
+    );
 
     res.json({
-      check_in: match ? match.check_in : null,
-      check_out: match ? match.check_out : null
+      check_in: scans.length > 0 ? scans[0] : null,
+      // Kalau cuma ada 1 scan, jam pulangnya belum bisa dipastikan
+      check_out: scans.length > 1 ? scans[scans.length - 1] : null
     });
   } catch (err) {
     res.status(500).json({ message: 'Gagal mengambil saran dari data absensi', error: err.message });
@@ -144,12 +156,12 @@ const getAttendanceSuggestion = async (req, res) => {
 const createRealization = async (req, res) => {
   const { actual_start, actual_end, is_holiday } = req.body;
   if (!actual_start || !actual_end) {
-    return res.status(400).json({ message: 'Jam mulai dan selesai aktual wajib diisi' });
+    return res.status(400).json({ message: 'Jam mulai dan selesai wajib diisi' });
   }
 
   try {
     const reqResult = await pool.query(
-      `SELECT ovt.*, e.company_id, p.basic_salary
+      `SELECT ovt.*, ovt.date::text AS date_str, e.company_id, p.basic_salary
        FROM overtime_requests ovt
        JOIN employees e ON ovt.employee_id = e.id
        LEFT JOIN employee_positions ep ON ep.employee_id = e.id AND ep.is_current = true
@@ -173,9 +185,21 @@ const createRealization = async (req, res) => {
       return res.status(400).json({ message: 'Realisasi untuk pengajuan ini sudah pernah diinput' });
     }
 
-    const actualHours = calcHours(actual_start, actual_end);
+    // 1) Validasi durasi mentah dulu (cek jam masuk/selesai wajar)
+    const rawHours = calcHours(actual_start, actual_end);
+    if (rawHours <= 0 || rawHours > 12) {
+      return res.status(400).json({ message: 'Jam lembur tidak wajar, cek kembali jam mulai dan selesai' });
+    }
+
+    // 2) Jenis hari (Minggu otomatis; libur nasional dari checkbox)
+    const dayType = getDayType(ovt.date_str, !!is_holiday);
+
+    // 3) Durasi bersih, dipotong 1 jam tiap jendela istirahat bergilir yang tersentuh
+    const actualHours = calcNetOvertimeHours(ovt.date_str, actual_start, actual_end);
+
+    // 4) Hitung rupiahnya
     const basicSalary = parseFloat(ovt.basic_salary) || 0;
-    const overtimeAmount = calculateOvertimePay(basicSalary, actualHours, !!is_holiday);
+    const overtimeAmount = calculateOvertimePay(basicSalary, actualHours, dayType);
 
     const result = await pool.query(
       `INSERT INTO overtime_realizations
